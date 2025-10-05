@@ -5,6 +5,14 @@ import errors as E
 from nodes import Node, Directory, File
 from paths import path_tokens
 
+"""
+    Minimal in-memory file system wrapper around our tree.
+    Provides:
+      - resolve(path) -> Node
+      - mkdir, rmdir
+      - create_file, read_file, delete_file
+"""
+
 class FileSystem:
     def __init__(self) -> None:  # Root is a Directory whose parent is None and whose printed path() is "/"
         self.root = Directory(name="/", parent=None)
@@ -19,6 +27,78 @@ class FileSystem:
         """
         tokens = path_tokens(path)  # [] means root
         return self._resolve_tokens(tokens)
+    
+    def mkdir(self, path: str) -> None:
+        """
+        Create a single directory (no parents auto-created).
+        Errors:
+          - InvalidPathError if '/' (root) is requested
+          - NotFoundError / NotADirectoryError if parent doesn't exist / is a file
+          - AlreadyExistsError if a node already exists at that name
+        """
+        parent, name = self._resolve_parent_and_name(path)
+        if name in parent.children:
+            target = ("" if parent.path() == "/" else parent.path()) + "/" + name
+            raise E.AlreadyExistsError(f"path already exists: {target}")
+        parent.add(Directory(name=name))
+
+    def rmdir(self, path: str) -> None:
+        """
+        Remove an empty directory.
+        Errors:
+          - NotFoundError if path missing
+          - NotADirectoryError if target is a file
+          - DirectoryNotEmptyError if directory has children
+          - InvalidPathError if trying to remove root '/'
+        """
+        node = self.resolve(path)
+        if not isinstance(node, Directory):
+            raise E.NotADirectoryError(f"not a directory: {node.path()}")
+        if node.parent is None:
+            raise E.InvalidPathError("cannot remove root directory '/'")
+        if node.children:
+            raise E.DirectoryNotEmptyError(f"directory not empty: {node.path()}")
+        node.parent.remove(node.name)
+
+    def create_file(self, path: str, content: str) -> None:
+        """
+        Create a file at 'path' with given content.
+        Errors:
+          - InvalidPathError if '/' requested
+          - NotFoundError / NotADirectoryError if parent missing / not a directory
+          - AlreadyExistsError if name already taken (file or directory)
+        """
+        parent, name = self._resolve_parent_and_name(path)
+        if name in parent.children:
+            target = ("" if parent.path() == "/" else parent.path()) + "/" + name
+            raise E.AlreadyExistsError(f"path already exists: {target}")
+        parent.add(File(name=name, content=content))
+
+    def read_file(self, path: str) -> str:
+        """
+        Return the content of a file.
+        Errors:
+          - NotFoundError if path missing
+          - NotAFileError if path points to a directory
+        """
+        node = self.resolve(path)
+        if not isinstance(node, File):
+            raise E.NotAFileError(f"not a file: {node.path()}")
+        return node.content
+
+    def delete_file(self, path: str) -> None:
+        """
+        Delete a file.
+        Errors:
+          - NotFoundError if path missing
+          - NotAFileError if path points to a directory
+        """
+        node = self.resolve(path)
+        if not isinstance(node, File):
+            raise E.NotAFileError(f"not a file: {node.path()}")
+        # parent must exist because root is a directory
+        assert node.parent is not None
+        node.parent.remove(node.name)
 
     def _resolve_parent_and_name(self, path: str) -> Tuple[Directory, str]:
         """
