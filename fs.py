@@ -1,9 +1,9 @@
-# fs.py
 from __future__ import annotations
 from typing import Tuple, List
 import errors as E
 from nodes import Node, Directory, File
 from paths import path_tokens
+import os  
 
 """
     Minimal in-memory file system wrapper around our tree.
@@ -149,3 +149,47 @@ class FileSystem:
         parts.reverse()
         parts.append(next_name)
         return parts
+    
+        # ---------- Pretty tree printer ----------
+
+    def tree_str(self) -> str:
+        """Return a pretty string of the current filesystem tree."""
+        lines: list[str] = []
+
+        def _walk(node, indent: int = 0) -> None:
+            spacer = "  " * indent
+            if isinstance(node, Directory):
+                name = "/" if node.parent is None else node.name + "/"
+                lines.append(f"{spacer}{name}")
+                # stable, sorted order for predictable output
+                for child_name in sorted(node.children.keys()):
+                    _walk(node.children[child_name], indent + 1)
+            else:
+                lines.append(f"{spacer}{node.name}")
+
+        _walk(self.root)
+        return "\n".join(lines)
+
+    def tree(self) -> None:
+        """Print the current filesystem tree."""
+        print(self.tree_str())
+
+    def export_to_real_fs(self, dest_root: str) -> None:
+        """
+        Create real folders/files under dest_root that mirror the in-memory tree.
+        Safe to run inside your repo. If dest_root exists, it will be merged into.
+        """
+        def _walk(node, cur_path):
+            from nodes import Directory, File  # local import to avoid cycle in editors
+            if isinstance(node, Directory):
+                os.makedirs(cur_path, exist_ok=True)
+                # deterministic order
+                for name in sorted(node.children.keys()):
+                    _walk(node.children[name], os.path.join(cur_path, name))
+            else:  # File
+                os.makedirs(os.path.dirname(cur_path), exist_ok=True)
+                with open(cur_path, "w", encoding="utf-8") as f:
+                    f.write(node.content)
+
+        os.makedirs(dest_root, exist_ok=True)
+        _walk(self.root, dest_root)
